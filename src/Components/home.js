@@ -21,6 +21,47 @@ const Home = () => {
   const [sampleFileData, setSampleFileData] = useState([]);
   const [errorMessage, setErrorMessage] = useState('');
   const [isEditing, setIsEditing] = useState(false);
+  const checkMissingColumns = (headerRow) => {
+  // Define required columns for each analysis type
+  const salesAnalysisColumns = ["Transaction ID", "Date and Time", "Value", "Product Code"];
+  const categoricalAnalysisColumns = [...salesAnalysisColumns, "Product Category", "Product Method", "Customer Segment"];
+  const productAnalysisColumns = [...categoricalAnalysisColumns, "Product Name", "Product Cost", "Profit"];
+  const inventoryAnalysisColumns = [...categoricalAnalysisColumns, "Storage Location", "Stock Level", "Restock Frequency"];
+
+  let requiredColumns = [];
+
+  // Determine the required columns based on the selected option
+  switch (selectedOption) {
+    case 'Sales Analysis':
+      requiredColumns = salesAnalysisColumns;
+      break;
+    case 'Categorical Analysis':
+      requiredColumns = categoricalAnalysisColumns;
+      break;
+    case 'Product Analysis':
+      requiredColumns = productAnalysisColumns;
+      break;
+    case 'Inventory Analysis':
+      requiredColumns = inventoryAnalysisColumns;
+      break;
+    default:
+      requiredColumns = [];
+  }
+
+  // Check for missing columns
+  const missingColumns = requiredColumns.filter(col => !headerRow.includes(col));
+
+  // If there are missing columns, automatically enable edit mode
+  if (missingColumns.length > 0) {
+    setIsEditing(true);  // Enable edit mode to allow user to modify the CSV
+    setErrorMessage(`Error: The following columns are missing: ${missingColumns.join(', ')}. You can now edit the CSV file to add the missing columns.`);
+  } else {
+    setIsEditing(false); // Disable edit mode if no columns are missing
+    setErrorMessage(''); // Clear any previous error messages
+  }
+
+  return missingColumns;
+};
 
   useEffect(() => {
     const fetchUserDetails = async () => {
@@ -43,6 +84,7 @@ const Home = () => {
     setSampleFileData([]);
   };
 
+//handling file uploads and validation
   const handleFileUpload = (file) => {
     if (file.type !== 'text/csv') {
       setErrorMessage('Please upload a valid CSV file.');
@@ -53,14 +95,23 @@ const Home = () => {
     const reader = new FileReader();
     reader.onload = (e) => {
       Papa.parse(e.target.result, {
-        header: false,
+        header: true,
         complete: (result) => {
-          setFileData(result.data);
+          const headerRow = result.meta.fields;
+          const missingColumns = checkMissingColumns(headerRow);
+  
+          if (missingColumns.length > 0) {
+            setErrorMessage(`Error: The following columns are missing: ${missingColumns.join(', ')}`);
+            setFileData([]);
+          } else {
+            setFileData(result.data);
+          }
         },
       });
     };
     reader.readAsText(file);
   };
+  
 
     // Updated loadSampleCSV function to load the correct CSV file based on the selected option
     const loadSampleCSV = () => {
@@ -115,6 +166,13 @@ const Home = () => {
   const handleEditToggle = () => {
     setIsEditing(!isEditing);
   };
+  
+  const handleSaveChanges = () => {
+    setIsEditing(false);
+    setErrorMessage(''); // Clear any existing error message
+    console.log('Updated CSV Data:', fileData); // Handle saving or further processing
+  };
+  
 
   const handleCellChange = (rowIndex, cellIndex, value) => {
     const updatedData = [...fileData];
@@ -122,30 +180,35 @@ const Home = () => {
     setFileData(updatedData);
   };
 
-  const handleSaveChanges = () => {
-    setIsEditing(false);
-    // Optionally, you can handle saving to a server or updating the file here
-    console.log('Updated CSV Data:', fileData);
-  };
-
   const renderCSVTable = (data) => {
     if (!data.length) return null;
-
+  
+    const headers = Object.keys(data[0]); // Assuming first row has headers
+  
     return (
       <table className="csv-table">
+        <thead>
+          <tr>
+            {headers.map((header, index) => (
+              <th key={index}>{header}</th>
+            ))}
+          </tr>
+        </thead>
         <tbody>
           {data.map((row, rowIndex) => (
             <tr key={rowIndex}>
-              {row.map((cell, cellIndex) => (
+              {headers.map((header, cellIndex) => (
                 <td key={cellIndex}>
                   {isEditing ? (
                     <input
                       type="text"
-                      value={cell}
-                      onChange={(e) => handleCellChange(rowIndex, cellIndex, e.target.value)}
+                      value={row[header]} // Access cell by header name
+                      onChange={(e) =>
+                        handleCellChange(rowIndex, header, e.target.value)
+                      }
                     />
                   ) : (
-                    cell
+                    row[header]
                   )}
                 </td>
               ))}
@@ -155,7 +218,7 @@ const Home = () => {
       </table>
     );
   };
-
+  
   const renderContent = () => {
     switch (selectedOption) {
       case 'Home':
@@ -168,6 +231,7 @@ const Home = () => {
       case 'Inventory Analysis':
         return (
           <div className="upload-container">
+            {/* File upload dropzone */}
             <div {...getRootProps({ className: 'dropzone' })}>
               <input {...getInputProps()} />
               <button type="button" className="upload-btn">
@@ -175,17 +239,29 @@ const Home = () => {
               </button>
               <span> Or drag and drop files</span>
             </div>
+  
+            {/* Display error message if any columns are missing */}
             {errorMessage && <div className="error-message">{errorMessage}</div>}
+  
+            {/* Display uploaded file if present */}
             {uploadedFile && (
               <div className="uploaded-file-container">
                 <div className="uploaded-file-header">
-                  <h3>{uploadedFile.name}</h3>
+                  <h3 
+                    className="file-name" 
+                    onClick={() => setIsEditing(!isEditing)}
+                    style={{ cursor: 'pointer', textDecoration: 'underline' }}
+                  >
+                    {uploadedFile.name} {/* Clicking file name toggles edit mode */}
+                  </h3>
                   <div className="file-options">
+                    {/* Edit/Save Icon: Toggles edit mode or saves changes */}
                     <FontAwesomeIcon
                       icon={isEditing ? faSave : faEdit}
                       className="edit-save-icon"
                       onClick={isEditing ? handleSaveChanges : handleEditToggle}
                     />
+                    {/* Remove File Icon */}
                     <FontAwesomeIcon
                       icon={faTimes}
                       className="remove-file-icon"
@@ -193,22 +269,28 @@ const Home = () => {
                     />
                   </div>
                 </div>
+  
+                {/* Render the CSV table, allowing edits even if missing columns */}
                 {renderCSVTable(fileData)}
               </div>
             )}
+  
+            {/* Button to load and display a sample CSV */}
             <button className="sample-csv-btn" onClick={loadSampleCSV}>
               <FontAwesomeIcon icon={faFileAlt} /> View Sample CSV
             </button>
+  
+            {/* Display sample CSV if loaded */}
             {sampleFileData.length > 0 && (
               <div className="sample-csv-container">
                 <div className="sample-file-header">
-                   <h3>Sample CSV File</h3>
-                   <FontAwesomeIcon
-                     icon = {faTimes}
-                     className="remove-sample-file-icon"
-                     onClick={handleRemoveSampleFile}
-                   />
-                </div>   
+                  <h3>Sample CSV File</h3>
+                  <FontAwesomeIcon
+                    icon={faTimes}
+                    className="remove-sample-file-icon"
+                    onClick={handleRemoveSampleFile}
+                  />
+                </div>
                 {renderCSVTable(sampleFileData)}
               </div>
             )}
@@ -220,7 +302,8 @@ const Home = () => {
         return <div>Welcome to the Home page!</div>;
     }
   };
-
+  
+  
   const renderAccountDetailsForm = () => (
     <div className="account-details">
       <div className="back-button" onClick={() => setIsAccountDetailsOpen(false)}>
@@ -388,3 +471,5 @@ const Home = () => {
 };
 
 export default Home;
+
+
