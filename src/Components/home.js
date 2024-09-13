@@ -21,47 +21,161 @@ const Home = () => {
   const [sampleFileData, setSampleFileData] = useState([]);
   const [errorMessage, setErrorMessage] = useState('');
   const [isEditing, setIsEditing] = useState(false);
-  const checkMissingColumns = (headerRow) => {
-  // Define required columns for each analysis type
-  const salesAnalysisColumns = ["Transaction ID", "Date and Time", "Value", "Product Code"];
-  const categoricalAnalysisColumns = [...salesAnalysisColumns, "Product Category", "Product Method", "Customer Segment"];
-  const productAnalysisColumns = [...categoricalAnalysisColumns, "Product Name", "Product Cost", "Profit"];
-  const inventoryAnalysisColumns = [...categoricalAnalysisColumns, "Storage Location", "Stock Level", "Restock Frequency"];
+  const checkMissingColumnsAndDataAnalysis = (headerRow, data) => {
+    // Define required columns for each analysis type
+    const salesAnalysisColumns = ["Transaction ID", "Date and Time", "Value", "Product Code"];
+    const categoricalAnalysisColumns = [...salesAnalysisColumns, "Product Category", "Product Method", "Customer Segment"];
+    const productAnalysisColumns = [...categoricalAnalysisColumns, "Product Name", "Product Cost", "Profit"];
+    const inventoryAnalysisColumns = [...categoricalAnalysisColumns, "Storage Location", "Stock Level", "Restock Frequency"];
+  
+    let requiredColumns = [];
+  
+    // Determine the required columns based on the selected option
+    switch (selectedOption) {
+      case 'Sales Analysis':
+        requiredColumns = salesAnalysisColumns;
+        break;
+      case 'Categorical Analysis':
+        requiredColumns = categoricalAnalysisColumns;
+        break;
+      case 'Product Analysis':
+        requiredColumns = productAnalysisColumns;
+        break;
+      case 'Inventory Analysis':
+        requiredColumns = inventoryAnalysisColumns;
+        break;
+      default:
+        requiredColumns = [];
+    }
+  
+    // Check for missing columns
+    const missingColumns = requiredColumns.filter(col => !headerRow.includes(col));
+  
+    // If there are missing columns, automatically enable edit mode
+    if (missingColumns.length > 0) {
+      setIsEditing(true);  // Enable edit mode to allow user to modify the CSV
+      setErrorMessage(`Error: The following columns are missing: ${missingColumns.join(', ')}. You can now edit the CSV file to add the missing columns.`);
+    } else {
+      setIsEditing(false); // Disable edit mode if no columns are missing
+      setErrorMessage(''); // Clear any previous error messages
+    }
+  
+    // Perform missing data analysis if no columns are missing
+    if (missingColumns.length === 0) {
+      const { columnMissingPercentage, missingScore } = missingDataAnalysis(data);
+  
+      // Log or set additional error message if needed
+      if (missingScore < 100) {
+        setErrorMessage(`Warning: Some data is missing in the CSV. Missing data score: ${missingScore.toFixed(2)}%. Check the data analysis for details.`);
+      }
+  
+      console.log("=== Missing Data Analysis ===");
+      console.log(columnMissingPercentage);
+      console.log(`\nMissing Data Score: ${missingScore.toFixed(2)}%`);
+    }
+  
+    return missingColumns;
+  };
+  
+  //Missing Data Analysis
+  const missingDataAnalysis = (data) => {
+    const columnMissingDetails = {};
+    const rowsWithMissingData = [];
+    let totalMissing = 0;
+  
+    // Iterate through each column to calculate the missing data percentage
+    for (let column of Object.keys(data[0])) {
+      const missingIndices = [];
+      const missingCount = data.filter((row, index) => {
+        if (!row[column] || row[column] === "") {
+          missingIndices.push(index + 1);  // Store row number with missing data
+          return true;
+        }
+        return false;
+      }).length;
+  
+      const missingPercentage = (missingCount / data.length) * 100;
+      columnMissingDetails[column] = {
+        missingCount,
+        missingPercentage,
+        missingIndices,  // Rows where data is missing
+      };
+      totalMissing += missingPercentage;
+  
+      if (missingIndices.length > 0) {
+        rowsWithMissingData.push({
+          column,
+          rows: missingIndices,
+        });
+      }
+    }
+  
+    // Average missing data percentage
+    const averageMissingPercentage = totalMissing / Object.keys(data[0]).length;
+  
+    console.log("=== Detailed Missing Data Analysis ===");
+    console.log(columnMissingDetails);
+    console.log(`Average Missing Data Percentage: ${averageMissingPercentage.toFixed(2)}%`);
+  
+    // Display missing row details
+    if (rowsWithMissingData.length > 0) {
+      console.log("Rows with Missing Data:");
+      rowsWithMissingData.forEach(({ column, rows }) => {
+        console.log(`Column: ${column} has missing data in rows: ${rows.join(', ')}`);
+      });
+    }
+  
+    // Missing data score calculation
+    const missingScore = 100 - averageMissingPercentage;
+    
+    return { columnMissingDetails, rowsWithMissingData, missingScore };
+  };
+  
+  
+  // Duplicate Data Analysis
+const duplicateDataAnalysis = (data) => {
+  const uniqueRows = new Set(data.map(JSON.stringify));
+  const duplicateCount = data.length - uniqueRows.size;
+  const duplicatePercentage = (duplicateCount / data.length) * 100;
 
-  let requiredColumns = [];
+  console.log("\n=== Duplicate Data Analysis ===");
+  console.log(`Total Duplicate Rows: ${duplicateCount}`);
+  console.log(`Duplicate Data Percentage: ${duplicatePercentage.toFixed(2)}%`);
 
-  // Determine the required columns based on the selected option
-  switch (selectedOption) {
-    case 'Sales Analysis':
-      requiredColumns = salesAnalysisColumns;
-      break;
-    case 'Categorical Analysis':
-      requiredColumns = categoricalAnalysisColumns;
-      break;
-    case 'Product Analysis':
-      requiredColumns = productAnalysisColumns;
-      break;
-    case 'Inventory Analysis':
-      requiredColumns = inventoryAnalysisColumns;
-      break;
-    default:
-      requiredColumns = [];
-  }
-
-  // Check for missing columns
-  const missingColumns = requiredColumns.filter(col => !headerRow.includes(col));
-
-  // If there are missing columns, automatically enable edit mode
-  if (missingColumns.length > 0) {
-    setIsEditing(true);  // Enable edit mode to allow user to modify the CSV
-    setErrorMessage(`Error: The following columns are missing: ${missingColumns.join(', ')}. You can now edit the CSV file to add the missing columns.`);
-  } else {
-    setIsEditing(false); // Disable edit mode if no columns are missing
-    setErrorMessage(''); // Clear any previous error messages
-  }
-
-  return missingColumns;
+  // Duplicate data score
+  const duplicateScore = 100 - duplicatePercentage;
+  return { duplicateCount, duplicateScore };
 };
+
+// Data Quality Score Calculation
+const dataQualityScore = (missingScore, duplicateScore) => {
+  const overallScore = (missingScore + duplicateScore) / 2;
+  console.log("\n=== Data Quality Score ===");
+  console.log(`Missing Data Score: ${missingScore.toFixed(2)}`);
+  console.log(`Duplicate Data Score: ${duplicateScore.toFixed(2)}`);
+  console.log(`Overall Data Quality Score: ${overallScore.toFixed(2)}`);
+  return overallScore;
+};
+
+// Suggest Methods for Fixing Missing Data
+const suggestMethodsForMissingData = (columnMissingPercentage) => {
+  console.log("\n=== Methods to Fix Missing Data ===");
+  for (const [col, perc] of Object.entries(columnMissingPercentage)) {
+    console.log(`\nColumn: ${col} | Missing: ${perc.toFixed(2)}%`);
+    console.log("Suggested Methods:");
+    console.log("- Mode Imputation (replace missing values with the most frequent value)");
+    console.log("- Fill with 'Unknown' or 'Other'");
+    console.log("- Drop Rows (if the missing percentage is too high)");
+  }
+};
+
+// Suggest Methods for Fixing Duplicate Data
+const suggestMethodsForDuplicateData = () => {
+  console.log("\n=== Methods to Fix Duplicate Data ===");
+  console.log("- Drop Duplicate Rows (use unique sets)");
+  console.log("- Aggregate Duplicate Rows (e.g., sum or average values for numerical columns)");
+};
+
 
   useEffect(() => {
     const fetchUserDetails = async () => {
@@ -85,33 +199,38 @@ const Home = () => {
   };
 
 //handling file uploads and validation
-  const handleFileUpload = (file) => {
-    if (file.type !== 'text/csv') {
-      setErrorMessage('Please upload a valid CSV file.');
-      return;
-    }
-    setUploadedFile(file);
-    setErrorMessage('');
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      Papa.parse(e.target.result, {
-        header: true,
-        complete: (result) => {
-          const headerRow = result.meta.fields;
-          const missingColumns = checkMissingColumns(headerRow);
-  
-          if (missingColumns.length > 0) {
-            setErrorMessage(`Error: The following columns are missing: ${missingColumns.join(', ')}`);
-            setFileData([]);
-          } else {
-            setFileData(result.data);
-          }
-        },
-      });
-    };
-    reader.readAsText(file);
+const handleFileUpload = (file) => {
+  if (file.type !== 'text/csv') {
+    setErrorMessage('Please upload a valid CSV file.');
+    return;
+  }
+
+  setUploadedFile(file);
+  setErrorMessage('');  // Clear any previous error messages
+  const reader = new FileReader();
+
+  reader.onload = (e) => {
+    Papa.parse(e.target.result, {
+      header: true,
+      complete: (result) => {
+        const headerRow = result.meta.fields;
+        const data = result.data;
+
+        // Check for missing columns and perform missing data analysis
+        const missingColumns = checkMissingColumnsAndDataAnalysis(headerRow, data);
+
+        if (missingColumns.length > 0) {
+          setErrorMessage(`Error: The following columns are missing: ${missingColumns.join(', ')}`);
+          setFileData([]);  // Clear file data if columns are missing
+        } else {
+          setFileData(data);  // Set file data if everything is valid
+        }
+      },
+    });
   };
-  
+
+  reader.readAsText(file);  // Read the file content
+};
 
     // Updated loadSampleCSV function to load the correct CSV file based on the selected option
     const loadSampleCSV = () => {
@@ -471,5 +590,3 @@ const Home = () => {
 };
 
 export default Home;
-
-
