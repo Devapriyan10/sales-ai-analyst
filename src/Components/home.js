@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useDropzone } from 'react-dropzone';
+import {gapi} from 'gapi-script';
+//import useDrivePicker from 'react-google-drive-picker'
+import GoogleDrivePicker from './GoogleDrivePicker';
 import Papa from 'papaparse';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
@@ -21,6 +24,7 @@ const Home = () => {
   const [sampleFileData, setSampleFileData] = useState([]);
   const [errorMessage, setErrorMessage] = useState('');
   const [isEditing, setIsEditing] = useState(false);
+  //const [openPicker, data, authResponse] = useDrivePicker()
   const checkMissingColumnsAndDataAnalysis = (headerRow, data) => {
     // Define required columns for each analysis type
     const salesAnalysisColumns = ["Transaction ID", "Date and Time", "Value", "Product Code"];
@@ -77,14 +81,23 @@ const Home = () => {
     return missingColumns;
   };
   
-  //Missing Data Analysis
+  // Missing Data Analysis
   const missingDataAnalysis = (data) => {
+    if (!data || data.length === 0) {
+      console.error('Error: No data provided for missing data analysis.');
+      return {
+        columnMissingDetails: {},
+        rowsWithMissingData: [],
+        missingScore: 100 // Assuming perfect score if no data exists
+      };
+    }
+  
     const columnMissingDetails = {};
     const rowsWithMissingData = [];
     let totalMissing = 0;
   
-    // Iterate through each column to calculate the missing data percentage
-    for (let column of Object.keys(data[0])) {
+    // Iterate through each column to calculate missing data details
+    Object.keys(data[0]).forEach((column) => {
       const missingIndices = [];
       const missingCount = data.filter((row, index) => {
         if (!row[column] || row[column] === "") {
@@ -97,42 +110,48 @@ const Home = () => {
       const missingPercentage = (missingCount / data.length) * 100;
       columnMissingDetails[column] = {
         missingCount,
-        missingPercentage,
+        missingPercentage: missingPercentage.toFixed(2),
         missingIndices,  // Rows where data is missing
       };
       totalMissing += missingPercentage;
   
+      // Store column and row numbers if there is missing data in the column
       if (missingIndices.length > 0) {
         rowsWithMissingData.push({
           column,
           rows: missingIndices,
         });
       }
-    }
+    });
   
-    // Average missing data percentage
-    const averageMissingPercentage = totalMissing / Object.keys(data[0]).length;
+    // Calculate the average missing data percentage across all columns
+    const averageMissingPercentage = (totalMissing / Object.keys(data[0]).length).toFixed(2);
   
     console.log("=== Detailed Missing Data Analysis ===");
     console.log(columnMissingDetails);
-    console.log(`Average Missing Data Percentage: ${averageMissingPercentage.toFixed(2)}%`);
+    console.log(`\nAverage Missing Data Percentage: ${averageMissingPercentage}%`);
   
-    // Display missing row details
+    // Display missing data row details if any rows have missing data
     if (rowsWithMissingData.length > 0) {
       console.log("Rows with Missing Data:");
       rowsWithMissingData.forEach(({ column, rows }) => {
         console.log(`Column: ${column} has missing data in rows: ${rows.join(', ')}`);
       });
+    } else {
+      console.log("No missing data detected.");
     }
   
-    // Missing data score calculation
-    const missingScore = 100 - averageMissingPercentage;
-    
-    return { columnMissingDetails, rowsWithMissingData, missingScore };
+    // Calculate missing data score (100 means no missing data)
+    const missingScore = (100 - averageMissingPercentage).toFixed(2);
+  
+    return {
+      columnMissingDetails,    // Detailed missing data info per column
+      rowsWithMissingData,     // Specific rows with missing data
+      missingScore             // Overall score based on missing data percentage
+    };
   };
   
-  
-  // Duplicate Data Analysis
+// Duplicate Data Analysis
 const duplicateDataAnalysis = (data) => {
   const uniqueRows = new Set(data.map(JSON.stringify));
   const duplicateCount = data.length - uniqueRows.size;
@@ -198,6 +217,8 @@ const suggestMethodsForDuplicateData = () => {
     setSampleFileData([]);
   };
 
+    
+  
 //handling file uploads and validation
 const handleFileUpload = (file) => {
   if (file.type !== 'text/csv') {
@@ -217,12 +238,20 @@ const handleFileUpload = (file) => {
         const data = result.data;
 
         // Check for missing columns and perform missing data analysis
-        const missingColumns = checkMissingColumnsAndDataAnalysis(headerRow, data);
-
+        const missingColumns = checkMissingColumnsAndDataAnalysis(headerRow);
+        
         if (missingColumns.length > 0) {
           setErrorMessage(`Error: The following columns are missing: ${missingColumns.join(', ')}`);
           setFileData([]);  // Clear file data if columns are missing
         } else {
+          // Perform detailed missing data analysis
+          const { columnMissingDetails, rowsWithMissingData, missingScore } = missingDataAnalysis(data);
+          
+          // Optionally, log or set this detailed information in the state to display in the UI
+          console.log("Missing Data Details:", columnMissingDetails);
+          console.log("Rows with Missing Data:", rowsWithMissingData);
+          console.log(`Overall Data Quality Score: ${missingScore}`);
+          
           setFileData(data);  // Set file data if everything is valid
         }
       },
@@ -231,6 +260,7 @@ const handleFileUpload = (file) => {
 
   reader.readAsText(file);  // Read the file content
 };
+
 
     // Updated loadSampleCSV function to load the correct CSV file based on the selected option
     const loadSampleCSV = () => {
@@ -299,6 +329,34 @@ const handleFileUpload = (file) => {
     setFileData(updatedData);
   };
 
+  //open picker
+ /* const handleOpenPicker = () =>{
+    openPicker({
+      clientId: "130064533513-3q1qluhmhmje804ks2cg7ki9mc0fp1n2.apps.googleusercontent.com",
+      developerKey: "AIzaSyDNOZKGW_nlw0FCMmJeu_vB0NyOzytjynQ",
+      viewId: "DOCS",
+      // token: token, // pass oauth token in case you already have one
+      showUploadView: true,
+      showUploadFolders: true,
+      supportDrives: true,
+      multiselect: true, 
+      // customViews: customViewsArray, // custom view
+      callbackFunction: (data) => {
+        if (data.action === 'cancel') {
+          console.log('User clicked cancel/close button')
+        }
+        console.log(data)
+      },
+    })
+  }
+
+  useEffect(()  => {
+     if (data && data.docs) {
+      data.docs.map((i) => console.log(i))
+     }
+
+  },[data])*/
+
   const renderCSVTable = (data) => {
     if (!data.length) return null;
   
@@ -358,6 +416,11 @@ const handleFileUpload = (file) => {
               </button>
               <span> Or drag and drop files</span>
             </div>
+            {/* Add Google Drive Browse Button */}
+          <div className="picker-btn">
+             {/* <button  onClick={() =>handleOpenPicker()}>Open Picker </button> */}
+             <GoogleDrivePicker />
+          </div>
   
             {/* Display error message if any columns are missing */}
             {errorMessage && <div className="error-message">{errorMessage}</div>}
