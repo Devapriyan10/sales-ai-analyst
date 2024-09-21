@@ -23,6 +23,7 @@ const Home = () => {
   const [fileData, setFileData] = useState([]);
   const [sampleFileData, setSampleFileData] = useState([]);
   const [errorMessage, setErrorMessage] = useState('');
+  const [analysisResults, setAnalysisResults] = useState({});
   const [isEditing, setIsEditing] = useState(false);
   //const [openPicker, data, authResponse] = useDrivePicker()
   const checkMissingColumnsAndDataAnalysis = (headerRow, data) => {
@@ -55,40 +56,40 @@ const Home = () => {
     // Check for missing columns
     const missingColumns = requiredColumns.filter(col => !headerRow.includes(col));
   
-    // If there are missing columns, automatically enable edit mode
     if (missingColumns.length > 0) {
       setIsEditing(true);  // Enable edit mode to allow user to modify the CSV
-      setErrorMessage(`Error: The following columns are missing: ${missingColumns.join(', ')}. You can now edit the CSV file to add the missing columns.`);
+      setErrorMessage(`Error: The following columns are missing: ${missingColumns.join(', ')}. Please edit the CSV file.`);
     } else {
       setIsEditing(false); // Disable edit mode if no columns are missing
-      setErrorMessage(''); // Clear any previous error messages
+      setErrorMessage(''); // Clear previous error messages
     }
   
     // Perform missing data analysis if no columns are missing
     if (missingColumns.length === 0) {
       const { columnMissingPercentage, missingScore } = missingDataAnalysis(data);
   
-      // Log or set additional error message if needed
       if (missingScore < 100) {
-        setErrorMessage(`Warning: Some data is missing in the CSV. Missing data score: ${missingScore.toFixed(2)}%. Check the data analysis for details.`);
+        setErrorMessage(`Warning: Missing data found. Missing data score: ${missingScore.toFixed(2)}%.`);
       }
   
-      console.log("=== Missing Data Analysis ===");
-      console.log(columnMissingPercentage);
-      console.log(`\nMissing Data Score: ${missingScore.toFixed(2)}%`);
+      setAnalysisResults(prev => ({
+        ...prev,
+        missingData: { columnMissingPercentage, missingScore }
+      }));
     }
   
     return missingColumns;
   };
   
+  
   // Missing Data Analysis
   const missingDataAnalysis = (data) => {
     if (!data || data.length === 0) {
-      console.error('Error: No data provided for missing data analysis.');
+      setErrorMessage('Error: No data provided for missing data analysis.');
       return {
         columnMissingDetails: {},
         rowsWithMissingData: [],
-        missingScore: 100 // Assuming perfect score if no data exists
+        missingScore: 100,
       };
     }
   
@@ -96,7 +97,6 @@ const Home = () => {
     const rowsWithMissingData = [];
     let totalMissing = 0;
   
-    // Iterate through each column to calculate missing data details
     Object.keys(data[0]).forEach((column) => {
       const missingIndices = [];
       const missingCount = data.filter((row, index) => {
@@ -111,45 +111,28 @@ const Home = () => {
       columnMissingDetails[column] = {
         missingCount,
         missingPercentage: missingPercentage.toFixed(2),
-        missingIndices,  // Rows where data is missing
+        missingIndices,
       };
       totalMissing += missingPercentage;
   
-      // Store column and row numbers if there is missing data in the column
       if (missingIndices.length > 0) {
-        rowsWithMissingData.push({
-          column,
-          rows: missingIndices,
-        });
+        rowsWithMissingData.push({ column, rows: missingIndices });
       }
     });
   
-    // Calculate the average missing data percentage across all columns
     const averageMissingPercentage = (totalMissing / Object.keys(data[0]).length).toFixed(2);
   
-    console.log("=== Detailed Missing Data Analysis ===");
-    console.log(columnMissingDetails);
-    console.log(`\nAverage Missing Data Percentage: ${averageMissingPercentage}%`);
+    setAnalysisResults(prev => ({
+      ...prev,
+      missingDataDetails: columnMissingDetails,
+      rowsWithMissingData,
+      averageMissingPercentage,
+    }));
   
-    // Display missing data row details if any rows have missing data
-    if (rowsWithMissingData.length > 0) {
-      console.log("Rows with Missing Data:");
-      rowsWithMissingData.forEach(({ column, rows }) => {
-        console.log(`Column: ${column} has missing data in rows: ${rows.join(', ')}`);
-      });
-    } else {
-      console.log("No missing data detected.");
-    }
-  
-    // Calculate missing data score (100 means no missing data)
     const missingScore = (100 - averageMissingPercentage).toFixed(2);
-  
-    return {
-      columnMissingDetails,    // Detailed missing data info per column
-      rowsWithMissingData,     // Specific rows with missing data
-      missingScore             // Overall score based on missing data percentage
-    };
+    return { columnMissingDetails, rowsWithMissingData, missingScore };
   };
+  
   
 // Duplicate Data Analysis
 const duplicateDataAnalysis = (data) => {
@@ -157,24 +140,29 @@ const duplicateDataAnalysis = (data) => {
   const duplicateCount = data.length - uniqueRows.size;
   const duplicatePercentage = (duplicateCount / data.length) * 100;
 
-  console.log("\n=== Duplicate Data Analysis ===");
-  console.log(`Total Duplicate Rows: ${duplicateCount}`);
-  console.log(`Duplicate Data Percentage: ${duplicatePercentage.toFixed(2)}%`);
+  setAnalysisResults(prev => ({
+    ...prev,
+    duplicateData: {
+      duplicateCount,
+      duplicatePercentage: duplicatePercentage.toFixed(2),
+    }
+  }));
 
-  // Duplicate data score
   const duplicateScore = 100 - duplicatePercentage;
   return { duplicateCount, duplicateScore };
 };
 
+
 // Data Quality Score Calculation
 const dataQualityScore = (missingScore, duplicateScore) => {
   const overallScore = (missingScore + duplicateScore) / 2;
-  console.log("\n=== Data Quality Score ===");
-  console.log(`Missing Data Score: ${missingScore.toFixed(2)}`);
-  console.log(`Duplicate Data Score: ${duplicateScore.toFixed(2)}`);
-  console.log(`Overall Data Quality Score: ${overallScore.toFixed(2)}`);
+  setAnalysisResults(prev => ({
+    ...prev,
+    overallDataQualityScore: overallScore.toFixed(2),
+  }));
   return overallScore;
 };
+
 
 // Suggest Methods for Fixing Missing Data
 const suggestMethodsForMissingData = (columnMissingPercentage) => {
@@ -395,6 +383,7 @@ const handleFileUpload = (file) => {
       </table>
     );
   };
+
   
   const renderContent = () => {
     switch (selectedOption) {
@@ -416,11 +405,11 @@ const handleFileUpload = (file) => {
               </button>
               <span> Or drag and drop files</span>
             </div>
+  
             {/* Add Google Drive Browse Button */}
-          <div className="picker-btn">
-             {/* <button  onClick={() =>handleOpenPicker()}>Open Picker </button> */}
-             <GoogleDrivePicker />
-          </div>
+            <div className="picker-btn">
+              <GoogleDrivePicker />
+            </div>
   
             {/* Display error message if any columns are missing */}
             {errorMessage && <div className="error-message">{errorMessage}</div>}
@@ -429,21 +418,19 @@ const handleFileUpload = (file) => {
             {uploadedFile && (
               <div className="uploaded-file-container">
                 <div className="uploaded-file-header">
-                  <h3 
-                    className="file-name" 
+                  <h3
+                    className="file-name"
                     onClick={() => setIsEditing(!isEditing)}
                     style={{ cursor: 'pointer', textDecoration: 'underline' }}
                   >
-                    {uploadedFile.name} {/* Clicking file name toggles edit mode */}
+                    {uploadedFile.name}
                   </h3>
                   <div className="file-options">
-                    {/* Edit/Save Icon: Toggles edit mode or saves changes */}
                     <FontAwesomeIcon
                       icon={isEditing ? faSave : faEdit}
                       className="edit-save-icon"
                       onClick={isEditing ? handleSaveChanges : handleEditToggle}
                     />
-                    {/* Remove File Icon */}
                     <FontAwesomeIcon
                       icon={faTimes}
                       className="remove-file-icon"
@@ -476,6 +463,73 @@ const handleFileUpload = (file) => {
                 {renderCSVTable(sampleFileData)}
               </div>
             )}
+  
+            {/* Data Analysis Results Section */}
+            <div>
+              <h2>Data Analysis</h2>
+              {errorMessage && <p style={{ color: 'red' }}>{errorMessage}</p>}
+  
+              <div>
+                <h3>Analysis Results:</h3>
+  
+                {/* Missing Data Analysis Section */}
+                {analysisResults?.missingData && (
+                  <div>
+                    <h4>=== Missing Data Analysis ===</h4>
+                    <p><strong>Transaction ID:</strong> {analysisResults.missingData.transactionId ?? 'N/A'}</p>
+                    <p><strong>Date and Time:</strong> {analysisResults.missingData.dateAndTime ?? 'N/A'}</p>
+                    <p><strong>Value:</strong> {analysisResults.missingData.value ?? 'N/A'}</p>
+                    <p><strong>Product Code:</strong> {analysisResults.missingData.productCode ?? 'N/A'}</p>
+  
+                    {/* Missing Data Percentage */}
+                    <h4>Missing Data Percentage:</h4>
+                    <p><strong>Transaction ID:</strong> {analysisResults.missingDataPercentage?.transactionId ?? 'N/A'}%</p>
+                    <p><strong>Date and Time:</strong> {analysisResults.missingDataPercentage?.dateAndTime ?? 'N/A'}%</p>
+                    <p><strong>Value:</strong> {analysisResults.missingDataPercentage?.value ?? 'N/A'}%</p>
+                    <p><strong>Product Code:</strong> {analysisResults.missingDataPercentage?.productCode ?? 'N/A'}%</p>
+  
+                    <p><strong>Average Missing Data Percentage:</strong> {analysisResults.averageMissingDataPercentage ?? 'N/A'}%</p>
+                  </div>
+                )}
+  
+                {/* Duplicate Data Analysis Section */}
+                {analysisResults?.duplicateData && (
+                  <div>
+                    <h4>=== Duplicate Data Analysis ===</h4>
+                    <p><strong>Total Duplicate Rows:</strong> {analysisResults.duplicateData.duplicateCount ?? 'N/A'}</p>
+                    <p><strong>Duplicate Data Percentage:</strong> {analysisResults.duplicateData.duplicatePercentage ?? 'N/A'}%</p>
+                  </div>
+                )}
+  
+                {/* Data Quality Score Section */}
+                {analysisResults?.overallDataQualityScore && (
+                  <div>
+                    <h4>=== Data Quality Score ===</h4>
+                    <p><strong>Missing Data Score:</strong> {analysisResults.missingDataScore ?? 'N/A'}</p>
+                    <p><strong>Duplicate Data Score:</strong> {analysisResults.duplicateDataScore ?? 'N/A'}</p>
+                    <p><strong>Overall Data Quality Score:</strong> {analysisResults.overallDataQualityScore ?? 'N/A'}</p>
+                  </div>
+                )}
+  
+                {/* Suggestions to Fix Missing Data */}
+                {analysisResults?.missingDataSuggestions && (
+                  <div>
+                    <h4>=== Methods to Fix Missing Data ===</h4>
+                    {analysisResults.missingDataSuggestions.map((suggestion, index) => (
+                      <div key={index}>
+                        <p><strong>Column:</strong> {suggestion.column}</p>
+                        <p><strong>Missing Percentage:</strong> {suggestion.percentage}%</p>
+                        <ul>
+                          {suggestion.methods.map((method, idx) => (
+                            <li key={idx}>{method}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         );
       case 'About Us':
